@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import { NextFunction, Request, Response } from "express";
 import { catchAsync } from "../../utils/catchAsync";
@@ -9,19 +10,43 @@ import { setAuthCookie } from "../../utils/setcookie";
 import { JwtPayload } from "jsonwebtoken";
 import { createUserToken } from "../../utils/userToken";
 import { envVars } from "../../config/env";
+import passport from "passport";
 
 const credentialsLogin = catchAsync(
   async (req: Request, res: Response, next: NextFunction) => {
-    const loginInfo = await AuthServices.credentialsLogin(req.body);
+    // this line is for without passport
+    // const loginInfo = await AuthServices.credentialsLogin(req.body);
 
-    setAuthCookie(res, loginInfo);
+    // this line for email login by passport
+    passport.authenticate("local", async (error:any , user: any, info: any) => {
+      
+      if (error) {
+        return next(new AppError(401, error))
+      }
 
-    sendResponse(res, {
-      success: true,
-      statusCode: httpStatus.OK,
-      message: "User Logged In Successfully",
-      data: loginInfo,
-    });
+      if (!user) {
+        return next(new AppError(401, info.message))
+      }
+
+      const userTokens = createUserToken(user)
+
+      // delete user.toObject().password
+      const {passsword: pass, ...rest} = user.toObject()
+      
+      
+      setAuthCookie(res, userTokens);
+
+      sendResponse(res, {
+        success: true,
+        statusCode: httpStatus.OK,
+        message: "User Logged In Successfully",
+        data: {
+          accessToken : userTokens.accessToken,
+          refreshToken: userTokens.refreshToken,
+          User: rest
+        }
+      });
+    })(req, res, next);
   }
 );
 
@@ -96,18 +121,15 @@ const resetPassword = catchAsync(
 
 const googleCallbackController = catchAsync(
   async (req: Request, res: Response, next: NextFunction) => {
-
-    // redirect 
-    let redirectTo = req.query.state? req.query.state as string : ""
+    // redirect
+    let redirectTo = req.query.state ? (req.query.state as string) : "";
     if (redirectTo.startsWith("/")) {
-      redirectTo = redirectTo.slice(1)
+      redirectTo = redirectTo.slice(1);
     }
-
 
     const user = req.user;
     // console.log(user);
-    
-    
+
     if (!user) {
       throw new AppError(httpStatus.NOT_FOUND, "User Not Found");
     }
